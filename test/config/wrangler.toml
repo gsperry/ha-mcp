@@ -1,0 +1,7 @@
+# Configuration used only by the test runner. It lives in its own directory so
+# that Wrangler's .dev.vars lookup (next to the config file) never finds a real
+# secrets file in the project root. Bindings come from vitest.config.ts.
+name = "ha-mcp"
+main = "../../src/index.ts"
+compatibility_date = "2026-10-21"
+compatibility_flags = ["nodejs_compat"]

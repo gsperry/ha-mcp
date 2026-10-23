@@ -1,0 +1,15 @@
+name = "ha-mcp"
+main = "src/index.ts"
+compatibility_date = "2026-10-21"
+compatibility_flags = ["nodejs_compat"]
+
+# Secrets (set with `wrangler secret put <NAME>`, never as vars here):
+#   HA_URL, HA_TOKEN, MCP_BEARER_TOKEN
+
+# Optional plain variables (not secrets), set under [vars] in your own configuration or in the
+# Cloudflare dashboard. None has a value here. See the README, Safety policy.
+#   ALLOW_SYSTEM_ACTIONS     the exact text "true" turns the system-action block off; absent means on
+#   ALLOWED_NOTIFY_SERVICES  comma-separated legacy notify services the model may call; absent means only the
+#                            delete confirmation service below, when it is valid
+#   DELETE_CONFIRMATION_NOTIFY_SERVICE  the legacy notify service that sends the delete code to your phone, for
+#                            example notify.mobile_app_pixel; absent means every delete is refused
