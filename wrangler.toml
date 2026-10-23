@@ -3,6 +3,11 @@ main = "src/index.ts"
 compatibility_date = "2026-10-21"
 compatibility_flags = ["nodejs_compat"]
 
+# Serve only the stable *.workers.dev address; no per-version preview URLs (each would be another
+# public endpoint running that version with the same secrets).
+workers_dev = true
+preview_urls = false
+
 # Secrets (set with `wrangler secret put <NAME>`, never as vars here):
 #   HA_URL, HA_TOKEN, MCP_BEARER_TOKEN
 
