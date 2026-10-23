@@ -37,3 +37,7 @@ The test run also collected test files from anywhere in the checkout, because vi
 - The Wrangler settings that matter to tests exist in two files (`wrangler.toml` and `test/config/wrangler.toml`); a change to the compatibility date or flags must be mirrored.
 - The isolation test checks the current config only; it cannot show that a future plugin version keeps the same lookup rule, but it will fail if that behaviour changes.
 - The local harness is still not evidence of production Workers behaviour.
+
+## Amendment, 2026-10-23: Node 24
+
+The toolchain moved to Node 24: `.nvmrc` is `24`, `engines.node` is `>=24`, and `@types/node` is 24.19.2. See [0018](0018-node-24-toolchain.md). The Node 22 statements above describe the toolchain as it was.

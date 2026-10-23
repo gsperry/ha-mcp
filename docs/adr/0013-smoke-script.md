@@ -31,3 +31,7 @@ Unit tests run against a local test harness with mocked Home Assistant calls, so
 - The tool list lives in one place; adding a tool means appending to `src/tool-names.ts`, or the smoke script and tests fail.
 - The script never writes to Home Assistant, but it does read real data when pointed at a real Worker, and each Home Assistant call counts against Home Assistant's login attempt rules if the token is wrong. Run it once, not in a loop.
 - Passing against a deployed Worker is real-environment evidence that this repository cannot produce on its own.
+
+## Amendment, 2026-10-23: Node 24
+
+The toolchain moved to Node 24: `.nvmrc` is `24`, `engines.node` is `>=24`, and `@types/node` is 24.19.2. See [0018](0018-node-24-toolchain.md). The Node 22 statements above describe the toolchain as it was.

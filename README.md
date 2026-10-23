@@ -8,7 +8,7 @@ Steps that only a person can do are marked **Human step**. Everything else in th
 
 ## Requirements
 
-- Node.js 22 (see `.nvmrc`)
+- Node.js 24 LTS (see `.nvmrc`)
 - A Cloudflare account (the Workers free plan is enough)
 - A Home Assistant instance reachable over HTTPS, for example through Nabu Casa (`https://<your-instance>.ui.nabu.casa`)
 

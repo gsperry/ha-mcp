@@ -42,3 +42,7 @@ The repository did not start that way. Its first commit already held a hand-writ
 ## Correction, 2026-10-23
 
 references to the original design note no longer cite a commit.
+
+## Amendment, 2026-10-23: Node 24
+
+The toolchain moved to Node 24: `.nvmrc` is `24`, `engines.node` is `>=24`, and `@types/node` is 24.19.2. See [0018](0018-node-24-toolchain.md). The Node 22 statements above describe the toolchain as it was.
