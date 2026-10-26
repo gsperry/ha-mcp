@@ -34,13 +34,16 @@ This server never retries a Home Assistant call and never repeats a call after a
 | --- | --- |
 | `HA_URL` | Base URL of the Home Assistant instance, for example `https://<your-instance>.ui.nabu.casa` |
 | `HA_TOKEN` | The long-lived access token of the dedicated administrator user |
-| `MCP_BEARER_TOKEN` | A random secret that clients present to the Worker |
+| `MCP_BEARER_TOKEN` | A random secret that clients present to the Worker. Claude Code uses it; it stays valid next to OAuth sign-in |
+| `OWNER_PASSWORD` | Only for OAuth sign-in (see Signing in with OAuth): the password you type on the sign-in page, at least 24 characters |
 
 Generate the bearer token with:
 
 ```sh
 openssl rand -base64 32
 ```
+
+and the owner password with `openssl rand -base64 24` (32 characters).
 
 For a deployed Worker, set each one with `wrangler secret put <NAME>` (see Deploy). Never put them in `wrangler.toml` or commit them.
 
@@ -68,7 +71,7 @@ npm run dev -- \
   --var MCP_BEARER_TOKEN:<bearer-token>
 ```
 
-or copy `.dev.vars.example` to `.dev.vars` and fill it in (the file is gitignored; never commit it). With dummy values the Worker starts and answers MCP requests, but every tool that calls Home Assistant fails.
+or copy `.dev.vars.example` to `.dev.vars` and fill it in (the file is gitignored; never commit it). With dummy values the Worker starts and answers MCP requests, but every tool that calls Home Assistant fails. OAuth sign-in is off locally unless you also uncomment the OAuth block in `wrangler.toml` and set `OWNER_PASSWORD`.
 
 The test suite never reads `.dev.vars`: it uses fixed fake values, a canary file in the project root checks that nothing leaks, and no test touches the network. Running tests cannot reach your Home Assistant.
 
@@ -130,25 +133,50 @@ npx wrangler secret put MCP_BEARER_TOKEN
 npx wrangler deploy
 ```
 
+To use OAuth sign-in instead of a header connector, do the extra steps under Signing in with OAuth before you deploy.
+
 The Worker is served at `https://ha-mcp.<your-account>.workers.dev`; the MCP endpoint is that URL plus `/mcp`. A custom domain can be added later without code changes, but you would then re-enter the new URL in each client.
 
 Then run `npm run smoke` against the deployed URL (also a human step, since it uses your real token), with `SMOKE_AUTOMATION_ID` set to an automation id you know if you want that step to run. Passing all steps proves the Worker can reach Home Assistant through Nabu Casa.
+
+## Signing in with OAuth
+
+OAuth sign-in is optional and off by default. Turn it on if your claude.ai account is a Team or Enterprise account, or you otherwise do not want a credential that works for everyone who can use the connector. On those plans an organization Owner adds a custom connector once and it then appears for every member; a connector that sends a fixed header makes that header the organization's credential, so every member's requests would carry the same key and could read and change your house. With OAuth, each person who presses Connect lands on a page of this Worker that asks for a password only you know.
+
+How it works: the Worker is its own OAuth server, built on Cloudflare's `@cloudflare/workers-oauth-provider`. It stores grants and tokens in a Workers KV namespace. Claude presents its published client identity (a client metadata document under `https://claude.ai/`, the only client ids accepted); there is no client registration endpoint. The sign-in page asks for `OWNER_PASSWORD`, and attempts are throttled by Cloudflare's Rate Limiting binding (5 a minute per Cloudflare location). A successful sign-in issues an access token that lasts one hour and a refresh token that lasts 30 days from sign-in, so you sign in again about monthly. Claude Code keeps using the static bearer header next to OAuth.
+
+OAuth is on only when all four of these are present: the KV namespace, the rate-limit binding, the `OWNER_PASSWORD` secret and the `global_fetch_strictly_public` compatibility flag. If any one is missing, the Worker serves only `/mcp`, accepts only the bearer token and answers 404 on every other path, exactly as it does without OAuth. A password shorter than 24 characters keeps OAuth on but turns the sign-in page into a 503 "not set up" page, so no new session can be created.
+
+**Human step** for every item below. None changes anything until you run it.
+
+1. Create the KV namespace: `npx wrangler kv namespace create OAUTH_KV`. In `wrangler.toml`, follow the comment in the OAuth block at the end: replace the `compatibility_flags` line with `compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]`, uncomment the two blocks, paste the printed namespace id, and change the rate-limit `namespace_id` if another rate limit in your account already uses it. A KV namespace id is not a secret.
+2. Generate the password with `openssl rand -base64 24`, store it in a password manager, and set it: `npx wrangler secret put OWNER_PASSWORD`. Only the length is checked; the password is yours to keep strong and used nowhere else.
+3. Deploy with `npx wrangler deploy`, then run `npm run smoke` as before (it uses the bearer token).
+4. In claude.ai, Organization settings, Connectors: remove the old header connector, then add a custom connector with the Worker's `/mcp` URL exactly as written (no trailing slash). Set Authentication to **Sign in now** and the OAuth client to **Use Claude's published identity**, with no client secret. A connector's authentication cannot be edited, so it is removed and added again.
+5. As the owner, open Customize, Connectors, the connector, and press Connect. The password page opens; enter the password. Do this once on a computer and once on a phone: the post must not be refused, and the password manager should offer to save the entry. Only ever sign in through a Connect you pressed yourself, never through a link someone sent you: the page shows the app, its publisher and where access will be sent, but cannot tell whose Connect it came from. If you fix something and retry, wait about five minutes: Claude caches the discovery documents.
+6. Optional check: from another member's account, or in a private window with a wrong password, confirm Connect cannot pass.
+
+The static bearer token stays valid. Whoever holds `MCP_BEARER_TOKEN` skips the password page. If the old header connector's value was seen by other people in your organization, rotating it is advisable (see Token rotation); it is not required for OAuth to work.
+
+What this does not protect against: someone who holds `MCP_BEARER_TOKEN` or `OWNER_PASSWORD`, someone who can read the Worker's secrets (they also hold the Home Assistant token), and you being persuaded to enter the password on a sign-in page that another member started.
 
 ## Connecting Claude
 
 ### claude.ai connector
 
-This server authenticates with a fixed bearer token, not OAuth, so the connector sends the token as a request header. Every step below is a human step.
+With OAuth sign-in turned on (see Signing in with OAuth), add the connector with Authentication **Sign in now** and **Use Claude's published identity**, then press Connect and enter your password. Every step is a human step.
+
+Without OAuth, the connector can send the bearer token as a request header. Do that only on an account where you are the only person who can see the connector: on a Team or Enterprise plan the header is shared with the whole organization.
 
 1. **Human step.** In claude.ai, open Settings, Connectors, Add custom connector.
 2. **Human step.** Enter the Worker's MCP URL, for example `https://ha-mcp.<your-account>.workers.dev/mcp`. Use the Worker's `/mcp` URL, never your Home Assistant URL: the connector talks to this server, which talks to Home Assistant.
 3. **Human step.** On the second step of the dialog, set Authentication to **No sign-in**. Leave the OAuth client options empty.
-4. **Human step.** Under Request headers, add a header named `authorization` with the value `Bearer <MCP_BEARER_TOKEN>`, using the same value as the `MCP_BEARER_TOKEN` secret. Claude sends the value exactly as entered, so type the word `Bearer`, one space, then the token. An `Authorization` header cannot be used on a connection that signs in with OAuth, which is why Authentication must be No sign-in.
+4. **Human step.** Under Request headers, add a header named `authorization` with the value `Bearer <MCP_BEARER_TOKEN>`, using the same value as the `MCP_BEARER_TOKEN` secret. Claude sends the value exactly as entered, so type the word `Bearer`, one space, then the token. An `Authorization` header cannot be used on a connection that signs in with OAuth, which is why Authentication must be No sign-in for this form.
 5. **Human step.** Add the connector and enable it in a conversation.
 
 Request headers is a beta feature in claude.ai, and bugs have been reported against it. A connector's authentication settings cannot be edited after it is added, so to change the token or any other authentication setting, remove the connector and add it again.
 
-If the connection fails, check this first: a 401 from the Worker means the header was not sent or the token is wrong. Compare the header value with the `MCP_BEARER_TOKEN` secret, check that it starts with `Bearer ` and has no stray spaces or line breaks, and see Troubleshooting. Claude Code (below) sends custom headers too.
+If the connection fails with a header connector, check this first: a 401 from the Worker means the header was not sent or the token is wrong. Compare the header value with the `MCP_BEARER_TOKEN` secret, check that it starts with `Bearer ` and has no stray spaces or line breaks, and see Troubleshooting. Claude Code (below) sends custom headers too.
 
 Once connected, check that the tool list appears, then try it from the phone: ask Claude to create an automation, for example "when the garage door has been open for 10 minutes after sunset, turn on the porch light". It should look up the real entity ids, call `upsert_automation`, then `get_automation`. Check the result in the Home Assistant automations screen. This phone test is a human step.
 
@@ -161,7 +189,11 @@ claude mcp add --transport http ha-mcp https://ha-mcp.<your-account>.workers.dev
   --header "Authorization: Bearer <bearer-token>"
 ```
 
+Claude Code is unchanged by OAuth sign-in: the header is checked first, with no sign-in and no KV read.
+
 ## Rolling back
+
+Removing the KV namespace, the rate-limit binding, the `OWNER_PASSWORD` secret or the compatibility flag from the deployment turns OAuth off: every OAuth path answers 404 and `/mcp` accepts only the bearer token. The same happens if you redeploy a build from before OAuth sign-in. The OAuth connector then fails with a 401 that has no sign-in information, and you would have to add a header connector again, which on a Team or Enterprise plan every member can use. The static bearer token keeps working throughout, and the KV namespace keeps its records until they expire.
 
 Redeploying a build from before delete confirmation silently restores single-call deletes (no code, no phone) and an empty default notify allowlist, and nothing on the server records that this happened. Do not roll back past that change without knowing. Automations or scripts the model writes under the older build stay after you redeploy this one and are not re-checked, so after any such period do the review step under Deleting an automation, and delete what it finds in Home Assistant.
 
@@ -170,7 +202,8 @@ Redeploying a build from before delete confirmation silently restores single-cal
 **Human step** for every item; each secret rotates independently.
 
 - `HA_TOKEN`: create a new long-lived token for the same Home Assistant user, run `npx wrangler secret put HA_TOKEN`, then delete the old token in Home Assistant. Nothing changes for clients.
-- `MCP_BEARER_TOKEN`: generate a new value with `openssl rand -base64 32`, run `npx wrangler secret put MCP_BEARER_TOKEN`, then update every client: remove the claude.ai connector and add it again with the new `authorization` header value (its authentication cannot be edited in place, see claude.ai connector), and run `claude mcp remove ha-mcp` and `claude mcp add` again with the new header. Clients fail with 401 until you do.
+- `OWNER_PASSWORD`: generate a new value with `openssl rand -base64 24` and run `npx wrangler secret put OWNER_PASSWORD`. Every OAuth session ends at its next `/mcp` call and its next refresh, so Claude asks you to sign in again, with the new password. This is also the way to revoke every OAuth session at once, for example if an access token or the password leaked. The bearer token is not affected.
+- `MCP_BEARER_TOKEN`: with OAuth turned on this concerns Claude Code (and a header connector, if you still have one) only. Rotating it is optional, and advisable if the value of an old header connector was seen by other people in your organization; OAuth sign-in does not need it and is not affected. To rotate: generate a new value with `openssl rand -base64 32`, run `npx wrangler secret put MCP_BEARER_TOKEN`, then update every client that uses it: run `claude mcp remove ha-mcp` and `claude mcp add` again with the new header, and, for a header connector, remove the claude.ai connector and add it again with the new `authorization` header value (its authentication cannot be edited in place, see claude.ai connector). Those clients fail with 401 until you do.
 - `HA_URL`: if the remote URL changes, run `npx wrangler secret put HA_URL`.
 
 ## Tools
@@ -308,19 +341,33 @@ A request that names an entity opens one WebSocket connection before the acting 
 
 ## Troubleshooting
 
-Status codes from the Worker itself (401, 403, 404 and 405 have empty bodies; 415, 406, 413 and 400 carry a JSON-RPC error body):
+Status codes from the Worker itself on `/mcp` (401, 403, 404, 405 and 503 have empty bodies; 415, 406, 413 and 400 carry a JSON-RPC error body):
 
 | Status | Meaning and fix |
 | --- | --- |
-| 401 | The bearer token is missing or wrong. Check the `Authorization: Bearer <token>` header against the `MCP_BEARER_TOKEN` secret. For the claude.ai connector, confirm the request header is named `authorization` and its value starts with `Bearer ` (see claude.ai connector). |
+| 401 | The credential is missing or wrong. For the bearer token, check the `Authorization: Bearer <token>` header against the `MCP_BEARER_TOKEN` secret; for a claude.ai header connector, confirm the request header is named `authorization` and its value starts with `Bearer ` (see claude.ai connector). With OAuth on, the answer carries `WWW-Authenticate: Bearer resource_metadata="...", scope="mcp"` so Claude can start a sign-in. |
+| 401 with `error="invalid_token"` | A token was presented and refused: it expired (access tokens last one hour), its grant was revoked, `OWNER_PASSWORD` changed, or it was issued for another host. Claude refreshes it and retries; if the refresh fails too, sign in again with Connect. |
 | 403 | The `Origin` header is not `claude.ai`, `anthropic.com` or a subdomain of either. Command-line clients send none; browsers do. Use the Inspector in proxy mode. |
-| 405 | Only `POST /mcp` is served. GET, DELETE and the browser's preflight `OPTIONS` get 405 with `Allow: POST`. |
-| 404 | The path is not exactly `/mcp`. |
+| 405 | `/mcp` takes POST only. GET, DELETE and the browser's preflight `OPTIONS` get 405 with `Allow: POST`. |
+| 404 | The path is not `/mcp`. With OAuth on, `/authorize`, `/oauth/token` and the two discovery documents (`/.well-known/oauth-authorization-server` and `/.well-known/oauth-protected-resource/mcp`) also exist. If they answer 404 when you expect them, one of the four OAuth requirements is missing (see Signing in with OAuth), or the compatibility flag `global_fetch_strictly_public` is not set. |
+| 503 with `Retry-After` | With OAuth on, the KV namespace could not be read, so an OAuth token could not be checked. Nothing is let through; the bearer token still works. Try again shortly. |
 | 415 | Add `Content-Type: application/json`. |
 | 406 | Add `Accept: application/json, text/event-stream`. |
 | 400 "JSON-RPC batches are not supported" | The client sent a JSON array (a batch). Send one message per request. The Worker reads each body once and refuses batches so that one request carries one tool call. |
 | 413 or 400 "Parse error" | The body is over 4 MiB, cannot be read, or is not JSON. |
 | 400 "Unsupported protocol version" | The client sent an `Mcp-Protocol-Version` header outside the SDK's supported list (2025-11-25, 2025-06-18, 2025-03-26, 2024-11-05, 2024-10-07). Update the client. The Worker logs the version and client name of each `initialize` request (`wrangler tail` is a human step). |
+
+The sign-in page (`/authorize`) answers with small HTML pages, and the token endpoint (`/oauth/token`) with JSON errors:
+
+| Status | Meaning and fix |
+| --- | --- |
+| 400 (page) | The sign-in request is not valid, and nothing was looked up. The client id is not one under `https://claude.ai/`, the redirect is neither Claude's callback nor a program on your own computer, the request has no PKCE challenge, repeats `client_id` or `redirect_uri`, or the form post is malformed. Start again from Connect. |
+| 401 (page) | "That password was not accepted." Type the `OWNER_PASSWORD` value again. Attempts are throttled, so a run of wrong ones leads to 429. |
+| 403 (empty) | A form post that did not come from the sign-in page's own origin. Use the page itself, not a script or another site. |
+| 429 (page) | Too many password attempts from one Cloudflare location. Wait a minute. The password was not checked. |
+| 502 (page) | The app's client document under `https://claude.ai/` could not be fetched or is invalid. Try again in a minute. |
+| 503 (page) | Sign-in is not set up (`OWNER_PASSWORD` is shorter than 24 characters) or temporarily unavailable (KV or the throttle failed). Nothing was granted. Set a longer password with `npx wrangler secret put OWNER_PASSWORD`, or try again. |
+| 400, 401 or 413 (JSON, token endpoint) | The token request was refused before the OAuth library saw it: any `Authorization` header, a media type other than `application/x-www-form-urlencoded`, a body over 8 KiB, or a missing, repeated or foreign `client_id`. Claude's own requests are never refused this way; the response says which. A dead code or refresh token is `invalid_grant`, which makes Claude ask you to sign in again. |
 
 Errors from Home Assistant come back as tool errors:
 
@@ -336,4 +383,4 @@ Errors from Home Assistant come back as tool errors:
 
 ## Layout
 
-`src/index.ts` is the Worker entry: it checks path, method, `Origin` and bearer token, reads and parses the body once (refusing JSON-RPC batches), then builds a new MCP server and transport for each request and hands the transport the parsed message. `src/ha/` holds the Home Assistant REST and WebSocket helpers, `src/policy/` the safety policy, `src/tools/` the tools, `docs/adr/` the recorded design decisions, and `scripts/smoke.ts` the smoke script.
+`src/index.ts` is the Worker entry: it checks path, method, `Origin` and the credential (the bearer token, or an OAuth access token when OAuth is on), reads and parses the body once (refusing JSON-RPC batches), then builds a new MCP server and transport for each request and hands the transport the parsed message. `src/oauth.ts` holds everything OAuth: the sign-in page, the edge checks in front of the OAuth library and the `/mcp` token check. `src/ha/` holds the Home Assistant REST and WebSocket helpers, `src/policy/` the safety policy, `src/tools/` the tools, `docs/adr/` the recorded design decisions, and `scripts/smoke.ts` the smoke script.

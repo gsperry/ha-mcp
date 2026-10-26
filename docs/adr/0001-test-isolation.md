@@ -41,3 +41,7 @@ The test run also collected test files from anywhere in the checkout, because vi
 ## Amendment, 2026-10-23: Node 24
 
 The toolchain moved to Node 24: `.nvmrc` is `24`, `engines.node` is `>=24`, and `@types/node` is 24.19.2. See [0018](0018-node-24-toolchain.md). The Node 22 statements above describe the toolchain as it was.
+
+## Amendment, 2026-10-26: the test configuration describes the OAuth-on deployment
+
+The test configuration in `test/config/wrangler.toml` now describes a deployment with OAuth sign-in turned on, which the shipped `wrangler.toml` leaves off (see [0019](0019-oauth-sign-in.md)). It carries the `global_fetch_strictly_public` compatibility flag, the `OAUTH_KV` namespace and the `SIGN_IN_LIMITER` rate-limit binding, and `vitest.config.ts` binds a fake `OWNER_PASSWORD` of at least 24 characters. The exact-key-set test lists them. Tests of the OAuth-off state pass an environment with a binding or the secret removed. For the flag, they replace the function that reports it, because the mocked `fetch` cannot tell the flag's presence apart from its absence. The off-state tests therefore run with the flag really on in the harness, which the shipped default does not have. The isolation rules above are unchanged: the KV namespace is the harness's local one, nothing reaches the network, and a real `.dev.vars` is still never read.

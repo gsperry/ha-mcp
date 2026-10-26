@@ -1,7 +1,21 @@
 # Configuration used only by the test runner. It lives in its own directory so
 # that Wrangler's .dev.vars lookup (next to the config file) never finds a real
-# secrets file in the project root. Bindings come from vitest.config.ts.
+# secrets file in the project root. Plain bindings and secrets come from vitest.config.ts.
 name = "ha-mcp"
 main = "../../src/index.ts"
 compatibility_date = "2026-10-21"
-compatibility_flags = ["nodejs_compat"]
+# This configuration describes a deployment with OAuth turned on, which the shipped configuration
+# leaves off: the compatibility flag, the KV namespace and the rate-limit binding are all set here.
+# Tests of the off state remove bindings from the environment they pass in.
+compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
+
+[[kv_namespaces]]
+binding = "OAUTH_KV"
+id = "test-oauth-kv"
+
+[[ratelimits]]
+name = "SIGN_IN_LIMITER"
+namespace_id = "1001"
+  [ratelimits.simple]
+  limit = 5
+  period = 60

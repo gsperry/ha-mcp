@@ -17,6 +17,7 @@
     "check": "npm run typecheck && npm run typecheck:scripts && npm test && npm run bundle"
   },
   "dependencies": {
+    "@cloudflare/workers-oauth-provider": "1.2.4",
     "@modelcontextprotocol/sdk": "1.32.1",
     "zod": "4.6.7"
   },

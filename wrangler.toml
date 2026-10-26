@@ -10,6 +10,7 @@ preview_urls = false
 
 # Secrets (set with `wrangler secret put <NAME>`, never as vars here):
 #   HA_URL, HA_TOKEN, MCP_BEARER_TOKEN
+#   OWNER_PASSWORD (only with the OAuth block at the end; at least 24 characters)
 
 # Optional plain variables (not secrets), set under [vars] in your own configuration or in the
 # Cloudflare dashboard. None has a value here. See the README, Safety policy.
@@ -18,3 +19,20 @@ preview_urls = false
 #                            delete confirmation service below, when it is valid
 #   DELETE_CONFIRMATION_NOTIFY_SERVICE  the legacy notify service that sends the delete code to your phone, for
 #                            example notify.mobile_app_pixel; absent means every delete is refused
+
+# OAuth sign-in (optional). To turn it on, replace the compatibility_flags line above with
+#   compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
+# uncomment the two blocks below, paste your KV namespace id, and set the OWNER_PASSWORD secret.
+# See the README. If any of the KV namespace, the rate-limit binding, the OWNER_PASSWORD secret
+# and that compatibility flag is missing, the Worker accepts only the bearer token on /mcp.
+#
+# [[kv_namespaces]]
+# binding = "OAUTH_KV"
+# id = "<your-kv-namespace-id>"
+#
+# [[ratelimits]]
+# name = "SIGN_IN_LIMITER"
+# namespace_id = "1001"   # any integer that no other rate limit in your account uses
+#   [ratelimits.simple]
+#   limit = 5
+#   period = 60

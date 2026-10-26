@@ -411,3 +411,7 @@ Only the real environment can prove these, and the change is not accepted until 
 ## Correction, 2026-10-23
 
 references to the original design note no longer cite a commit; line numbers now point at the current `plan.md`.
+
+## Amendment, 2026-10-26: an OAuth session is a second way to hold a credential
+
+The guessing residual counts "a holder of the bearer token". With OAuth sign-in ([0019](0019-oauth-sign-in.md)) it also counts a holder of an OAuth access token, and the two are not distinguishable to the tools: both are "the owner". The remedy "rotate the bearer token" gains "change `OWNER_PASSWORD`", which ends every OAuth session at once. The confirmation key is unchanged: it is still derived from `HA_TOKEN`, and the OAuth session tag is derived from `OWNER_PASSWORD` with its own label, so neither secret feeds the other.

@@ -76,6 +76,10 @@ describe("routing and auth edge", () => {
     expect((await rpc("tools/list", 1)).status).toBe(200);
   });
 
+  // The test configuration has OAuth on, so the 401 of the last release (a bare `Bearer` challenge)
+  // is what a deployment without the OAuth settings answers. The OAuth-on 401 is covered in test/oauth.
+  const oauthOff = { ...(env as unknown as Env), SIGN_IN_LIMITER: undefined } as Env;
+
   it("401 with an empty body and WWW-Authenticate for a missing or wrong bearer", async () => {
     const bad: Record<string, string>[] = [
       {},
@@ -86,7 +90,7 @@ describe("routing and auth edge", () => {
       { Authorization: "Basic test-bearer-token" },
     ];
     for (const headers of bad) {
-      const res = await SELF.fetch(URL_MCP, { method: "POST", headers });
+      const res = await worker.fetch(new Request(URL_MCP, { method: "POST", headers }), oauthOff);
       expect(res.status, JSON.stringify(headers)).toBe(401);
       expect(res.headers.get("WWW-Authenticate")).toBe("Bearer");
       expect(await res.text()).toBe("");
@@ -150,6 +154,7 @@ describe("MCP handling", () => {
         requestedProtocolVersion: "2025-11-25",
         clientName: "test-client",
         clientVersion: "1.2.3",
+        auth: "static",
       });
       expect(lines.join("\n")).not.toContain("test-bearer-token");
     } finally {
@@ -219,7 +224,11 @@ describe("JSON-RPC batches are refused at the edge", () => {
   });
 
   it.each(arrays)("%s without a bearer gets the 401 and learns nothing about batches", async (_name, body) => {
-    const res = await post(body, { "Content-Type": "application/json", Accept: "application/json, text/event-stream" });
+    const oauthOff = { ...(env as unknown as Env), SIGN_IN_LIMITER: undefined } as Env;
+    const res = await worker.fetch(
+      new Request(URL_MCP, { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" }, body }),
+      oauthOff,
+    );
     expect(res.status).toBe(401);
     expect(res.headers.get("WWW-Authenticate")).toBe("Bearer");
     expect(await res.text()).toBe("");

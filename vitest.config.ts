@@ -19,6 +19,7 @@ export default defineConfig({
           HA_URL: "https://ha.test",
           HA_TOKEN: "test-ha-token",
           MCP_BEARER_TOKEN: "test-bearer-token",
+          OWNER_PASSWORD: "test-owner-password-0123456789abcdef",
         },
       },
     }),

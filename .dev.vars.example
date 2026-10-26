@@ -2,3 +2,5 @@
 HA_URL=https://your-instance.example.com
 HA_TOKEN=replace-with-a-home-assistant-long-lived-access-token
 MCP_BEARER_TOKEN=replace-with-openssl-rand-base64-32
+# Only for OAuth sign-in (see the README): at least 24 characters, for example openssl rand -base64 24
+OWNER_PASSWORD=replace-with-openssl-rand-base64-24

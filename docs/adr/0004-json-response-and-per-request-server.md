@@ -37,3 +37,7 @@ The default JSON-schema validator (Ajv) is constructed with every `Server`, so p
 - The local test runtime is not production Workers; the first connection from a real client is the check that matters.
 - A stateless server cannot remember a negotiated protocol version, so the `Mcp-Protocol-Version` header is validated by the SDK on every request: a version outside the SDK's supported list gets a 400.
 - The SDK limits a request body to 4 MiB.
+
+## Amendment, 2026-10-26: the initialize log line names the credential
+
+The `initialize` log line gains `auth`, `"static"` or `"oauth"`, so the owner can see which credential a client used. It carries nothing else new. The OAuth objects (the authorization server and the resource server of [0019](0019-oauth-sign-in.md)) are built for each request from the request's origin and the environment, as the MCP server is, and nothing about them is kept at module scope.

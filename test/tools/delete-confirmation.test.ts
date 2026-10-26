@@ -339,7 +339,7 @@ describe("delete_automation: call 2", () => {
 });
 
 describe("delete_automation: the settings", () => {
-  const callBoth = async (settings: Record<string, string>) => {
+  const callBoth = async (settings: Parameters<typeof callToolWithEnv>[0]) => {
     const one = await callToolWithEnv(settings, "delete_automation", { id: "a1" });
     const requestsOne = spy.requests.length;
     // Call 2 with garbage: the setting must refuse first, whatever the challenge looks like.

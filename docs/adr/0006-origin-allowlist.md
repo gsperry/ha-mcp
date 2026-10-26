@@ -23,3 +23,7 @@ A request without an `Origin` header is allowed. A request with one is allowed o
 - A new first-party hostname outside these domains needs a code change.
 - The Origin check is not authentication: a non-browser client can send any header. The bearer token is the authentication.
 - Because the check precedes the bearer check, a disallowed Origin learns nothing about whether its token was right.
+
+## Amendment, 2026-10-26: the allow list applies to `/mcp` only
+
+The allow list applies to `/mcp` only. `/authorize` uses a same-origin rule on its `POST` ([0019](0019-oauth-sign-in.md), D4), and the discovery and token paths have no `Origin` rule.
