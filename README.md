@@ -349,7 +349,7 @@ Status codes from the Worker itself on `/mcp` (401, 403, 404, 405 and 503 have e
 | 401 with `error="invalid_token"` | A token was presented and refused: it expired (access tokens last one hour), its grant was revoked, `OWNER_PASSWORD` changed, or it was issued for another host. Claude refreshes it and retries; if the refresh fails too, sign in again with Connect. |
 | 403 | The `Origin` header is not `claude.ai`, `anthropic.com` or a subdomain of either. Command-line clients send none; browsers do. Use the Inspector in proxy mode. |
 | 405 | `/mcp` takes POST only. GET, DELETE and the browser's preflight `OPTIONS` get 405 with `Allow: POST`. |
-| 404 | The path is not `/mcp`. With OAuth on, `/authorize`, `/oauth/token` and the two discovery documents (`/.well-known/oauth-authorization-server` and `/.well-known/oauth-protected-resource/mcp`) also exist. If they answer 404 when you expect them, one of the four OAuth requirements is missing (see Signing in with OAuth), or the compatibility flag `global_fetch_strictly_public` is not set. |
+| 404 | The path is not `/mcp`. With OAuth on, `/authorize`, `/oauth/token` and the two discovery documents (`/.well-known/oauth-authorization-server` and `/.well-known/oauth-protected-resource/mcp`) also exist. If they answer 404 when you expect them, one of the four OAuth requirements is missing (see Signing in with OAuth), or the request reached the Worker under an origin that is neither `https` nor a loopback address, which turns OAuth off for that request. |
 | 503 with `Retry-After` | With OAuth on, the KV namespace could not be read, so an OAuth token could not be checked. Nothing is let through; the bearer token still works. Try again shortly. |
 | 415 | Add `Content-Type: application/json`. |
 | 406 | Add `Accept: application/json, text/event-stream`. |
@@ -361,13 +361,13 @@ The sign-in page (`/authorize`) answers with small HTML pages, and the token end
 
 | Status | Meaning and fix |
 | --- | --- |
-| 400 (page) | The sign-in request is not valid, and nothing was looked up. The client id is not one under `https://claude.ai/`, the redirect is neither Claude's callback nor a program on your own computer, the request has no PKCE challenge, repeats `client_id` or `redirect_uri`, or the form post is malformed. Start again from Connect. |
+| 400 (page) | The sign-in request is not valid. The client id is not one under `https://claude.ai/`, the redirect is neither Claude's callback nor a program on your own computer, the request has no PKCE challenge, repeats `client_id` or `redirect_uri`, or the form post is malformed; most of these are refused before anything is fetched. The same page also appears when the OAuth library rejects the redirect against the client's own document, after that document was fetched. Start again from Connect. |
 | 401 (page) | "That password was not accepted." Type the `OWNER_PASSWORD` value again. Attempts are throttled, so a run of wrong ones leads to 429. |
 | 403 (empty) | A form post that did not come from the sign-in page's own origin. Use the page itself, not a script or another site. |
 | 429 (page) | Too many password attempts from one Cloudflare location. Wait a minute. The password was not checked. |
 | 502 (page) | The app's client document under `https://claude.ai/` could not be fetched or is invalid. Try again in a minute. |
 | 503 (page) | Sign-in is not set up (`OWNER_PASSWORD` is shorter than 24 characters) or temporarily unavailable (KV or the throttle failed). Nothing was granted. Set a longer password with `npx wrangler secret put OWNER_PASSWORD`, or try again. |
-| 400, 401 or 413 (JSON, token endpoint) | The token request was refused before the OAuth library saw it: any `Authorization` header, a media type other than `application/x-www-form-urlencoded`, a body over 8 KiB, or a missing, repeated or foreign `client_id`. Claude's own requests are never refused this way; the response says which. A dead code or refresh token is `invalid_grant`, which makes Claude ask you to sign in again. |
+| 400, 401 or 413 (JSON, token endpoint) | The token request was refused before the OAuth library saw it: any `Authorization` header, a media type other than `application/x-www-form-urlencoded`, a body over 8 KiB, or a missing, repeated or foreign `client_id`. Claude's documented requests pass these checks. An `invalid_client` here may mean Claude sent client authentication (a Basic header, a `client_secret` or a client assertion), or a client id outside `https://claude.ai/`; that differs from Claude's documentation and should be reported. The response says which check failed. A dead code or refresh token is `invalid_grant`, which makes Claude ask you to sign in again. |
 
 Errors from Home Assistant come back as tool errors:
 

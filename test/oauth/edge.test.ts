@@ -272,13 +272,20 @@ describe("origins the library accepts", () => {
     }
   });
 
-  it("a non-loopback http origin behaves as OAuth off, without an exception", async () => {
-    for (const origin of ["http://worker.test", "http://192.0.2.1", "http://localhost.example.test"]) {
-      const res = await call(request(origin, "/mcp", { method: "POST" }));
-      expect(res.status, origin).toBe(401);
-      expect(res.headers.get("WWW-Authenticate"), origin).toBe("Bearer");
-      expect((await call(request(origin, "/.well-known/oauth-authorization-server"))).status, origin).toBe(404);
-      expect((await call(request(origin, "/authorize"))).status, origin).toBe(404);
+  it("a non-loopback http origin behaves as OAuth off, without an exception and without asking the library (no log line)", async () => {
+    const log = spyConsole();
+    try {
+      for (const origin of ["http://worker.test", "http://192.0.2.1", "http://localhost.example.test"]) {
+        const res = await call(request(origin, "/mcp", { method: "POST" }));
+        expect(res.status, origin).toBe(401);
+        expect(res.headers.get("WWW-Authenticate"), origin).toBe("Bearer");
+        expect((await call(request(origin, "/.well-known/oauth-authorization-server"))).status, origin).toBe(404);
+        expect((await call(request(origin, "/authorize"))).status, origin).toBe(404);
+      }
+      // The edge's own origin check answered; the library's refusal (logged as a configuration problem) was never reached.
+      expect(log.text()).not.toContain("oauth_error");
+    } finally {
+      log.restore();
     }
   });
 });

@@ -204,6 +204,88 @@ describe("requests refused before anything is looked up", () => {
   });
 });
 
+describe("POST /authorize: the same refusals as GET, before anything is looked up", () => {
+  const other = "https://evil.test/x";
+  const cases: [string, () => Promise<URLSearchParams>][] = [
+    ["a foreign client_id", () => authorizeQuery({ client_id: other })],
+    [
+      "a repeated client_id",
+      async () => {
+        const query = await authorizeQuery();
+        query.append("client_id", other);
+        return query;
+      },
+    ],
+    ["a foreign redirect_uri", () => authorizeQuery({ redirect_uri: "https://evil.test/callback" })],
+    ["a missing code_challenge", () => authorizeQuery({ code_challenge: null, code_challenge_method: null })],
+  ];
+
+  it.each(cases.flatMap(([name, query]) => (["deny", "allow"] as const).map((decision) => [name, query, decision] as const)))(
+    "%s with decision=%s is a local 400 page: no redirect, no outbound request",
+    async (_name, query, decision) => {
+      const res = await postAuthorize({ decision, password: PASSWORD }, { query: await query(), headers: { Origin: ORIGIN } });
+      expect(res.status).toBe(400);
+      expect(res.headers.get("Location")).toBeNull();
+      expect(res.headers.get("Content-Type")).toContain("text/html");
+      expect(spy.requests).toEqual([]);
+    },
+  );
+});
+
+describe("POST /authorize: the body", () => {
+  const post = async (body: BodyInit, headers: Record<string, string> = {}) =>
+    call(
+      new Request(`${ORIGIN}/authorize?${await authorizeQuery()}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", Origin: ORIGIN, ...headers },
+        body,
+        duplex: "half",
+      } as RequestInit),
+    );
+
+  /** A chunked body with no Content-Length: `prefix`, then `pad` bytes of filler in 1 KiB chunks. */
+  const chunked = (prefix: string, pad: number): ReadableStream<Uint8Array> => {
+    const parts = [new TextEncoder().encode(prefix)];
+    for (let left = pad; left > 0; left -= 1024) parts.push(new TextEncoder().encode("x".repeat(Math.min(1024, left))));
+    return new ReadableStream<Uint8Array>({
+      pull(controller) {
+        const next = parts.shift();
+        if (next) controller.enqueue(next);
+        else controller.close();
+      },
+    });
+  };
+
+  it("a chunked body over 4 KiB that would otherwise succeed is a 400, and one under the limit is read in full", async () => {
+    const small = await post(chunked("decision=deny&pad=", 3 * 1024));
+    expect(small.status).toBe(302);
+    const big = await post(chunked("decision=deny&pad=", 5 * 1024));
+    expect(big.status).toBe(400);
+    expect(big.headers.get("Location")).toBeNull();
+  });
+
+  it("the media type is judged before the body is read", async () => {
+    let pulls = 0;
+    const counted = (): ReadableStream<Uint8Array> =>
+      new ReadableStream<Uint8Array>(
+        {
+          pull(controller) {
+            pulls++;
+            controller.enqueue(new TextEncoder().encode("decision=deny"));
+            controller.close();
+          },
+        },
+        { highWaterMark: 0 },
+      );
+    const wrong = await post(counted(), { "Content-Type": "application/json" });
+    expect(wrong.status).toBe(400);
+    expect(pulls).toBe(0);
+    // Control: with the right media type the same stream is read, so the counter can see a read.
+    expect((await post(counted())).status).toBe(302);
+    expect(pulls).toBeGreaterThan(0);
+  });
+});
+
 describe("POST /authorize: the same-origin rule", () => {
   const form = { decision: "allow", password: "wrong" };
 
@@ -296,6 +378,12 @@ describe("POST /authorize: the rest", () => {
     expect(res.headers.get("Referrer-Policy")).toBe("same-origin");
     expect(calls.put).toEqual([]);
     expect(calls.delete).toEqual([]);
+  });
+
+  it("a wrong password costs two client-document fetches (parse, then the page's facts), not three", async () => {
+    const res = await postAuthorize({ decision: "allow", password: WRONG });
+    expect(res.status).toBe(401);
+    expect(spy.requests.map((r) => r.url)).toEqual([CLIENT_ID, CLIENT_ID]);
   });
 
   it("the right password is a 302 to the callback with code, state and iss", async () => {

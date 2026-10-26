@@ -71,8 +71,8 @@ export const unreachableResourceHandler = {
   },
 };
 
-/** The authorization-server role never uses the execution context; the library's signature still asks for one. */
-const NO_CONTEXT = {} as ExecutionContext;
+/** The authorization-server role never uses the execution context; the library's signature still asks for one. Fresh for each call. */
+const noContext = (): ExecutionContext => ({}) as ExecutionContext;
 
 export interface OAuth {
   readonly env: Env & { OAUTH_KV: KVNamespace; OWNER_PASSWORD: string; SIGN_IN_LIMITER: RateLimit };
@@ -318,9 +318,9 @@ function isAllowedRedirect(redirectUri: string): boolean {
 export async function handleOAuthPath(request: Request, url: URL, oauth: OAuth): Promise<Response> {
   switch (url.pathname) {
     case AS_METADATA_PATH:
-      return oauth.server.fetch(request, oauth.env, NO_CONTEXT);
+      return oauth.server.fetch(request, oauth.env, noContext());
     case RESOURCE_METADATA_PATH:
-      return oauth.resourceServer.fetch(request, oauth.env, NO_CONTEXT);
+      return oauth.resourceServer.fetch(request, oauth.env, noContext());
     case TOKEN_PATH:
       return handleToken(request, oauth);
     default:
@@ -379,7 +379,7 @@ async function handleToken(request: Request, oauth: OAuth): Promise<Response> {
 /** Runs the library's token endpoint; a thrown error becomes an OAuth-shaped 503. */
 async function throughLibrary(request: Request, oauth: OAuth): Promise<Response> {
   try {
-    return await oauth.server.fetch(request, oauth.env, NO_CONTEXT);
+    return await oauth.server.fetch(request, oauth.env, noContext());
   } catch {
     logOAuthError({ category: "token-endpoint", reason: "library_threw" });
     return new Response(JSON.stringify({ error: "temporarily_unavailable", error_description: "Try again shortly" }), {
@@ -576,9 +576,12 @@ async function handleAuthorize(request: Request, url: URL, oauth: OAuth): Promis
   const matches = password.length > 0 && (await constantTimeEqual(password, oauth.env.OWNER_PASSWORD));
   if (!matches) {
     logSignIn("wrong_password", authRequest);
-    const again = await parseRequest(request, oauth, true);
-    if ("response" in again) return again.response;
-    return signInPage(again.consent!, 401, "That password was not accepted.");
+    // The request is already parsed and checked; only the page's facts are looked up again.
+    try {
+      return signInPage(await oauth.api.describeConsent(authRequest), 401, "That password was not accepted.");
+    } catch {
+      return CLIENT_UNREACHABLE();
+    }
   }
 
   try {

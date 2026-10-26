@@ -164,6 +164,35 @@ describe.each(Object.entries(kinds))("%s", (_name, base) => {
     }
   });
 
+  it("the media type is judged before the body is read", async () => {
+    let pulls = 0;
+    const counted = (): ReadableStream<Uint8Array> =>
+      new ReadableStream<Uint8Array>(
+        {
+          pull(controller) {
+            pulls++;
+            controller.enqueue(new TextEncoder().encode("client_id=x"));
+            controller.close();
+          },
+        },
+        { highWaterMark: 0 },
+      );
+    const post = (contentType: string) =>
+      call(new Request(`${ORIGIN}/oauth/token`, { method: "POST", headers: { "Content-Type": contentType }, body: counted(), duplex: "half" } as RequestInit));
+    const wrong = await post("application/json");
+    expect(wrong.status).toBe(400);
+    expect(pulls).toBe(0);
+    // Control: with the right media type the stream is read.
+    expect((await post(FORM)).status).toBe(401);
+    expect(pulls).toBeGreaterThan(0);
+  });
+
+  it("is parsed by formData, not URLSearchParams: a leading ? belongs to the first key, so that client_id is not seen", async () => {
+    // URLSearchParams would drop the ? and read an allowed client id; the library's parser does not.
+    const body = `?client_id=${encodeURIComponent(CLIENT_ID)}&${new URLSearchParams(base).toString()}`;
+    await expectEdgeRefusal({ fields: {}, body }, 401, "invalid_client");
+  });
+
   it("with exactly 8 KiB is read, not refused as too large", async () => {
     const padding = "p=" + "x".repeat(8 * 1024 - 2);
     const { res } = await send({ fields: {}, body: padding });
